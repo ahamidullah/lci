@@ -1,9 +1,18 @@
 import qualified Data.Map.Strict as Map
 import Text.ParserCombinators.Parsec
+import System.Console.Readline (readline)
 
-main :: IO ()
-main = do exprStr <- getLine
-          putStrLn $ printExpr $ eval (parseExpr exprStr, Map.fromList [])
+repl :: IO ()
+repl = do maybeLine <- readline "expr?> "
+          case maybeLine of
+            Nothing     -> return ()
+            Just "exit" -> return ()
+            Just line   -> case parseExpr line of
+                             Just expr -> do printExpr $ eval (expr, Map.fromList [])
+                                             repl
+                             Nothing   -> putStrLn "syntax error"
+--main = do exprStr <- getInputLine "expr?"
+--          printExpr $ eval (parseExpr exprStr, Map.fromList [])
 
 type Name = Char
 data Expr = Variable Name | Function Name Expr | Application Expr Expr
@@ -23,13 +32,13 @@ eval (expr, b) = go expr
               substitute name                = Map.findWithDefault (Variable name) name b
 
 -- Parsing
-parseExpr :: String -> Expr
+parseExpr :: String -> Maybe Expr
 parseExpr s = case parse expr "(unknown)" s of
-                Right a -> a
-                Left _ -> error "syntax error"
+                Right a -> Just a
+                Left _ -> Nothing
 
-defSpaces :: Parser Char
-defSpaces = char ' '
+defSpaces :: Parser [Char]
+defSpaces = many1 $ char ' '
 
 expr :: Parser Expr
 expr = (do char '\\'
@@ -46,18 +55,21 @@ expr = (do char '\\'
               return $ Variable v
 
 app :: Parser Expr
-app = do e1 <- expr
+app = do fn <- expr
          spaces
-         e2 <- expr
+         args <- (sepEndBy1 expr defSpaces)
          spaces
-         return $ Application e1 e2
+         return $ foldl (\f a -> Application f a) fn args
 
 var :: Parser Char
 var = noneOf " .\\()"
 
 -- Printing
-printExpr :: Expr -> String
-printExpr (Application e1 e2)  = "(" ++ (printExpr e1) ++ (printExpr e2) ++ ")"
-printExpr (Function name body) = "(" ++ "\\" ++ name:[] ++ "." ++ (printExpr body) ++ ")"
-printExpr (Variable name)      = name:[]
+printExpr :: Expr -> IO ()
+printExpr e = putStrLn $ "beta reduction: " ++ exprToStr e
+
+exprToStr :: Expr -> String
+exprToStr (Application e1 e2)  = "(" ++ (exprToStr e1) ++ (exprToStr e2) ++ ")"
+exprToStr (Function name body) = "(" ++ "\\" ++ name:[] ++ "." ++ (exprToStr body) ++ ")"
+exprToStr (Variable name)      = name:[]
 
